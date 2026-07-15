@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#111815" />
+    <meta name="description" content="グラサンカピバラが帝国を築き、長芋族と戦う本格3DアクションRPG" />
+    <title>カピバラ帝国記 — 長芋戦役</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="world" aria-label="カピバラ帝国の3D世界"></canvas>
+
+      <div id="hud" class="hidden">
+        <div class="cinema top"></div><div class="cinema bottom"></div>
+        <header class="topbar glass">
+          <div class="brand"><span class="brand-mark">帝</span><div><small>CAPYBARA EMPIRE</small><b>カピバラ帝国記</b></div></div>
+          <div class="location"><small>現在地</small><b id="zone-name">黄金湿原</b></div>
+          <div class="top-actions"><button id="sound-btn" title="音声">♪</button><button id="pause-btn" title="メニュー">☰</button></div>
+        </header>
+
+        <aside class="quest glass">
+          <div class="eyebrow"><span>MAIN QUEST</span><em id="chapter">第一章</em></div>
+          <h2 id="quest-title">帝国、立つ</h2>
+          <p id="quest-text">参謀かぴ政宗に話しかける</p>
+          <div class="quest-progress"><i id="quest-bar"></i></div>
+          <small id="quest-count">0 / 1</small>
+        </aside>
+
+        <aside class="minimap glass">
+          <canvas id="map" width="176" height="176"></canvas>
+          <div class="compass n">N</div><div class="compass e">E</div><div class="compass s">S</div><div class="compass w">W</div>
+          <p><span></span>帝都　<i></i>長芋砦</p>
+        </aside>
+
+        <section class="boss-bar hidden" id="boss-bar">
+          <small>長芋族・大族長</small><b>大長老 ナガトロ</b>
+          <div><i id="boss-hp"></i></div>
+        </section>
+
+        <section class="target-card glass hidden" id="target-card">
+          <small id="target-kind">長芋族</small><b id="target-name">長芋兵</b>
+          <div><i id="target-hp"></i></div>
+        </section>
+
+        <section class="player-status glass">
+          <div class="portrait"><img src="/art/capybara.png" alt="グラサンカピバラ" /></div>
+          <div class="status-copy">
+            <small><span id="player-level">LV. 1</span>　<span id="player-role">森に生まれた者</span></small>
+            <b id="player-name">カピノブ</b>
+            <label><span>HP</span><i><em id="hp-bar"></em></i><strong id="hp-text">120 / 120</strong></label>
+            <label><span>覇気</span><i class="spirit"><em id="spirit-bar"></em></i><strong id="spirit-text">0%</strong></label>
+            <div class="xp"><i id="xp-bar"></i></div>
+          </div>
+        </section>
+
+        <section class="party glass">
+          <small><span id="party-title">旅の仲間</span> <b id="party-count">1 / 4</b></small>
+          <div id="party-list"><span class="active">王</span><span>—</span><span>—</span><span>—</span></div>
+        </section>
+
+        <section class="actions">
+          <button id="attack-btn"><kbd>SPACE</kbd><span>⚔</span><b>頭突き</b></button>
+          <button id="skill-btn"><kbd>Q</kbd><span>帝</span><b>帝王突進</b><small>覇気 50</small></button>
+          <button id="interact-btn"><kbd>E</kbd><span>!</span><b>調べる</b></button>
+        </section>
+
+        <div class="control-hint glass"><b>WASD</b> 移動　 <b>SHIFT</b> 疾走　 <b>SPACE</b> 攻撃　 <b>Q</b> スキル　 <b>E</b> 会話　 <b>ドラッグ</b> 視点</div>
+        <div class="interaction hidden" id="interaction"><kbd>E</kbd><span id="interaction-text">話す</span></div>
+        <div class="toast" id="toast"></div>
+        <div class="combo-display" id="combo-display"></div>
+        <div class="hit-flash" id="hit-flash"></div>
+        <div class="damage-flash" id="damage-flash"></div>
+
+        <div class="mobile-controls">
+          <div class="joystick" id="joystick"><i id="joystick-knob"></i></div>
+          <button class="mobile-attack" id="mobile-attack" data-label="攻撃" aria-label="頭突き攻撃">⚔</button>
+          <button class="mobile-skill" id="mobile-skill" data-label="必殺" aria-label="帝王突進">帝</button>
+          <button class="mobile-interact" id="mobile-interact" data-label="話す" aria-label="話す・調べる">!</button>
+        </div>
+      </div>
+
+      <section id="title-screen" class="title-screen">
+        <div class="title-fog"></div>
+        <div class="title-content">
+          <div class="seal">森の暦・はじまりの日</div>
+          <p class="title-kicker">THE CAPYBARA CHRONICLES</p>
+          <h1><span>カピバラ帝国記</span><b>長芋戦役</b></h1>
+          <p class="title-lead">森で生まれ、敗北し、仲間と出会い、世界を巡る。<br />すべての旅は、長芋族との最後の戦いへ——。</p>
+          <div class="title-models"><img src="/art/capybara.png" alt="主人公カピバラ" /><i>対</i><img src="/art/nagaimo.png" alt="宿敵の長芋" /></div>
+          <button id="start-btn"><span>物語を始める</span><small>NEW CHRONICLE</small></button>
+          <button id="continue-btn" class="subtle hidden">前回の続きから</button>
+          <small class="title-note">ヘッドホン推奨　/　自動セーブ対応</small>
+        </div>
+      </section>
+
+      <section class="dialog-layer hidden" id="dialog-layer">
+        <div class="dialog-portrait"><img id="dialog-image" src="/art/capybara.png" alt="会話キャラクター" /></div>
+        <div class="dialog-box glass">
+          <small id="dialog-role">帝国参謀</small><h2 id="dialog-name">かぴ政宗</h2>
+          <p id="dialog-text"></p>
+          <button id="dialog-next">次へ <span>▶</span></button>
+        </div>
+      </section>
+
+      <section class="menu-layer hidden" id="menu-layer">
+        <div class="menu-panel glass">
+          <div class="menu-seal">帝</div><small>CHRONICLE PAUSED</small><h2>軍議の間</h2>
+          <button id="resume-btn">冒険を続ける</button>
+          <button id="journal-btn">帝国戦記を見る</button>
+          <button id="restart-btn">最初からやり直す</button>
+          <p>進行状況は自動で保存されます</p>
+        </div>
+      </section>
+
+      <section class="journal-layer hidden" id="journal-layer">
+        <div class="journal-panel">
+          <header><div><small>IMPERIAL ARCHIVES</small><h2>カピバラ帝国戦記</h2></div><button id="journal-close">×</button></header>
+          <div class="journal-body"><div id="chapter-list"></div><aside><img src="/art/nagaimo.png" alt="長芋族資料" /><h3>長芋族・調査記録</h3><p>森の道から黄金湿原、黒土砦まで勢力を広げた一族。最初の敗北を越え、各地で得た力と仲間が最後の勝利を切り開く。</p></aside></div>
+        </div>
+      </section>
+
+      <section class="ending hidden" id="ending">
+        <div><small>CHRONICLE COMPLETE</small><h2>カピバラ帝国、建国。</h2><p>長芋族との戦いは終わった。<br />黄金湿原には、今日も新たな歴史が刻まれていく。</p><button id="ending-close">帝国を歩き続ける</button></div>
+      </section>
+
+      <section class="loss-scene hidden" id="loss-scene">
+        <div class="loss-mark">敗</div>
+        <small>INEVITABLE DEFEAT</small>
+        <h2>まだ、勝てない。</h2>
+        <p>この敗北が、長い旅の始まりになる。</p>
+      </section>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
