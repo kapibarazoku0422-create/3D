@@ -53,3 +53,10 @@
   .mobile-skill{width:60px;height:60px;right:103px;bottom:max(85px,calc(env(safe-area-inset-bottom) + 61px))}
   .mobile-interact{width:56px;height:56px;right:25px;bottom:max(193px,calc(env(safe-area-inset-bottom) + 169px))}
 }
+
+.campaign-meta{display:grid;grid-template-columns:1fr auto;gap:2px 8px;margin-top:8px;padding-top:7px;border-top:1px solid rgba(233,199,107,.12);font-size:8px;letter-spacing:.08em;color:#9f967f}
+.campaign-meta b{grid-column:1;font-weight:700;color:#d2b969}
+.campaign-meta time{grid-column:2;grid-row:1/3;align-self:center;font:700 13px "Noto Serif JP";color:#eee3c6}
+#chapter-list{max-height:480px;overflow-y:auto;padding-right:8px;scrollbar-color:#917437 transparent;scrollbar-width:thin}
+#chapter-list::-webkit-scrollbar{width:5px}
+#chapter-list::-webkit-scrollbar-thumb{background:#917437}

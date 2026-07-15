@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#111815" />
-    <meta name="description" content="グラサンカピバラが帝国を築き、長芋族と戦う本格3DアクションRPG" />
+    <meta name="description" content="グラサンカピバラが帝国を築き、六つの戦場で長芋族と戦う約30時間想定の3DアクションRPG" />
     <title>カピバラ帝国記 — 長芋戦役</title>
   </head>
   <body>
@@ -25,6 +25,7 @@
           <p id="quest-text">参謀かぴ政宗に話しかける</p>
           <div class="quest-progress"><i id="quest-bar"></i></div>
           <small id="quest-count">0 / 1</small>
+          <div class="campaign-meta"><span id="story-progress">CHAPTER 1 / 45</span><b id="campaign-length">第一部・旅立ち</b><time id="play-time">00:00</time></div>
         </aside>
 
         <aside class="minimap glass">
@@ -34,7 +35,7 @@
         </aside>
 
         <section class="boss-bar hidden" id="boss-bar">
-          <small>長芋族・大族長</small><b>大長老 ナガトロ</b>
+          <small id="boss-kind">長芋族・大族長</small><b id="boss-name">大長老 ナガトロ</b>
           <div><i id="boss-hp"></i></div>
         </section>
 
@@ -86,11 +87,11 @@
           <div class="seal">森の暦・はじまりの日</div>
           <p class="title-kicker">THE CAPYBARA CHRONICLES</p>
           <h1><span>カピバラ帝国記</span><b>長芋戦役</b></h1>
-          <p class="title-lead">森で生まれ、敗北し、仲間と出会い、世界を巡る。<br />すべての旅は、長芋族との最後の戦いへ——。</p>
+          <p class="title-lead">森で生まれ、敗北し、仲間と出会い、帝国を築く。<br />全45章・六つの戦場を巡る、約30時間の長芋戦役。</p>
           <div class="title-models"><img src="/art/capybara.png" alt="主人公カピバラ" /><i>対</i><img src="/art/nagaimo.png" alt="宿敵の長芋" /></div>
           <button id="start-btn"><span>物語を始める</span><small>NEW CHRONICLE</small></button>
           <button id="continue-btn" class="subtle hidden">前回の続きから</button>
-          <small class="title-note">ヘッドホン推奨　/　自動セーブ対応</small>
+          <small class="title-note">全45章・想定28〜32時間　/　自動セーブ対応</small>
         </div>
       </section>
 
@@ -116,12 +117,12 @@
       <section class="journal-layer hidden" id="journal-layer">
         <div class="journal-panel">
           <header><div><small>IMPERIAL ARCHIVES</small><h2>カピバラ帝国戦記</h2></div><button id="journal-close">×</button></header>
-          <div class="journal-body"><div id="chapter-list"></div><aside><img src="/art/nagaimo.png" alt="長芋族資料" /><h3>長芋族・調査記録</h3><p>森の道から黄金湿原、黒土砦まで勢力を広げた一族。最初の敗北を越え、各地で得た力と仲間が最後の勝利を切り開く。</p></aside></div>
+          <div class="journal-body"><div id="chapter-list"></div><aside><img src="/art/nagaimo.png" alt="長芋族資料" /><h3>長芋族・六戦域調査記録</h3><p>黒土砦の先には、建国を狙う残党、白根海道、王都内乱、地底根城、空中棚田、そして始祖神殿が待つ。45章すべての記録が帝国の歴史になる。</p></aside></div>
         </div>
       </section>
 
       <section class="ending hidden" id="ending">
-        <div><small>CHRONICLE COMPLETE</small><h2>カピバラ帝国、建国。</h2><p>長芋族との戦いは終わった。<br />黄金湿原には、今日も新たな歴史が刻まれていく。</p><button id="ending-close">帝国を歩き続ける</button></div>
+        <div><small id="ending-kicker">FIRST CAMPAIGN COMPLETE</small><h2 id="ending-title">第一部完。帝国、建国。</h2><p id="ending-text">大長老との戦いは終わった。<br />だが帝国の長い歴史は、ここから始まる。</p><button id="ending-close">第二部へ進む</button></div>
       </section>
 
       <section class="loss-scene hidden" id="loss-scene">

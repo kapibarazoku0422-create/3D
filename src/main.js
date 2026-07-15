@@ -1,6 +1,15 @@
 import * as THREE from "three";
 import "./style.css";
 import { createCapybara, createYam, animateCharacter, setCharacterHit } from "./models.js";
+import {
+  CAMPAIGN_START_STAGE,
+  CAMPAIGN_EPILOGUE_STAGE,
+  STORY_STAGE_COUNT,
+  campaignChapters,
+  campaignChapterForStage,
+  campaignDialog,
+  epilogueQuest,
+} from "./campaign.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("world");
@@ -52,6 +61,8 @@ const game = {
   birthShown: false, ambushTriggered: false, scriptedLoss: 0, lossHit: false,
   cameraYaw: 0, cameraPitch: 0.34, cameraDistance: 9,
   playTime: 0, target: null, sound: true, audio: null,
+  chapterProgress: 0, campaignKills: 0, seenCampaignStages: [],
+  campaignComplete: false, transitioning: false,
 };
 
 const keys = new Set();
@@ -61,6 +72,8 @@ const outposts = [];
 const particles = [];
 const damageNumbers = [];
 const allies = [];
+const campaignPool = [];
+let campaignBoss = null;
 let gate;
 let player;
 let moveSpeed = 0;
@@ -288,14 +301,23 @@ function setupCharacters() {
   ];
   enemyData.forEach(([id, name, x, z, scale, region, requiredStage], index) => addEnemy({ id, name, x, z, scale, region, requiredStage, hp: 54 + index * 5, damage: 9 + Math.floor(index / 3) }));
   addEnemy({ id: "boss", name: "大長老 ナガトロ", x: 0, z: -65, scale: 1.95, hp: 680, damage: 24, boss: true, region: "boss", requiredStage: 7 });
+
+  const poolSize = touchDevice ? 5 : 7;
+  for (let i = 0; i < poolSize; i++) {
+    const enemy = addEnemy({ id: `campaign-${i}`, name: "遠征長芋", x: 0, z: -10, scale: 0.9, hp: 100, damage: 10, region: "campaign", requiredStage: CAMPAIGN_START_STAGE, campaign: true });
+    enemy.model.visible = false;
+    campaignPool.push(enemy);
+  }
+  campaignBoss = addEnemy({ id: "campaign-boss", name: "遠征大将", x: 0, z: -65, scale: 1.7, hp: 1000, damage: 20, boss: true, region: "campaign", requiredStage: CAMPAIGN_START_STAGE, campaign: true });
+  campaignBoss.model.visible = false;
 }
 
-function addEnemy({ id, name, x, z, scale, hp, damage, boss = false, region = "field", requiredStage = 4 }) {
+function addEnemy({ id, name, x, z, scale, hp, damage, boss = false, region = "field", requiredStage = 4, campaign = false }) {
   const model = createYam({ scale, boss });
   model.position.set(x, heightAt(x, z), z);
   model.rotation.y = Math.random() * Math.PI * 2;
   world.add(model);
-  const enemy = { id, name, model, hp, maxHp: hp, damage, boss, region, requiredStage, dead: false, attackCd: Math.random() * 2, special: 0, origin: new THREE.Vector3(x, 0, z), hitIds: new Set() };
+  const enemy = { id, name, model, hp, maxHp: hp, damage, boss, region, requiredStage, campaign, campaignStage: -1, dead: false, attackCd: Math.random() * 2, special: 0, origin: new THREE.Vector3(x, 0, z), hitIds: new Set() };
   enemies.push(enemy);
   return enemy;
 }
@@ -335,7 +357,7 @@ function buildWorld() {
   addAtmosphere();
 }
 
-const questData = [
+const baseQuestData = [
   ["序章", "森に生まれた日", "木漏れ日の道を歩き、森の外を目指す", 1],
   ["序章", "逃れられない襲撃", "現れた長芋武者に立ち向かう", 1],
   ["第一章", "敗北の朝", "野営地のかぴ政宗と話し、決意を固める", 1],
@@ -344,7 +366,12 @@ const questData = [
   ["第四章", "黄金湿原の戦い", "湿原に展開した長芋族を6体倒す", 6],
   ["第五章", "黒土前線", "精鋭4体を倒し、前哨旗2か所を制圧する", 6],
   ["最終章", "長芋戦役", "黒土砦で大長老ナガトロを倒す", 1],
-  ["建国後", "帝国の夜明け", "仲間と築いた帝国に平和が訪れた", 1],
+];
+
+const questData = [
+  ...baseQuestData,
+  ...campaignChapters.map((chapter) => [chapter.act, chapter.title, chapter.text, chapter.target]),
+  [epilogueQuest.act, epilogueQuest.title, epilogueQuest.text, epilogueQuest.target],
 ];
 
 function defeatedCount(region) {
@@ -357,17 +384,21 @@ function questProgress() {
   if (game.stage === 4) return defeatedCount("forest");
   if (game.stage === 5) return defeatedCount("wetland");
   if (game.stage === 6) return defeatedCount("front") + game.posts.filter(Boolean).length;
-  return game.stage >= 8 ? 1 : 0;
+  if (game.stage === 7) return enemies.find((enemy) => enemy.id === "boss")?.dead ? 1 : 0;
+  if (game.stage === CAMPAIGN_EPILOGUE_STAGE) return 1;
+  return game.chapterProgress;
 }
 
 function updateQuestUI() {
-  const q = questData[game.stage];
+  const q = questData[game.stage] || questData[questData.length - 1];
   const value = questProgress();
   $("chapter").textContent = q[0];
   $("quest-title").textContent = q[1];
   $("quest-text").textContent = q[2];
   $("quest-count").textContent = `${value} / ${q[3]}`;
   $("quest-bar").style.width = `${Math.min(100, value / q[3] * 100)}%`;
+  $("story-progress").textContent = `CHAPTER ${Math.min(game.stage + 1, STORY_STAGE_COUNT)} / ${STORY_STAGE_COUNT}`;
+  $("campaign-length").textContent = game.stage >= CAMPAIGN_START_STAGE ? "LONG CAMPAIGN・28–32H" : "第一部・旅立ち";
   outposts.forEach((post, i) => {
     post.captured = !!game.posts[i];
     post.ring.material.color.set(post.captured ? 0x62c681 : 0xf0c75d);
@@ -377,10 +408,13 @@ function updateQuestUI() {
 
 function advanceStage(stage, message) {
   game.stage = stage;
+  game.chapterProgress = 0;
+  game.transitioning = false;
   updateQuestUI();
   updateParty();
   toast(message);
   playSound("quest");
+  if (stage >= CAMPAIGN_START_STAGE) prepareCampaignChapter({ teleport: true, announce: true });
   saveGame();
   if (stage >= 4 && stage <= 6) queueMicrotask(syncJourneyProgress);
 }
@@ -389,6 +423,174 @@ function syncJourneyProgress() {
   if (game.stage === 4 && defeatedCount("forest") >= 4) advanceStage(5, "森の長芋、先に全部しばいてた。黄金湿原へ行くぞ！");
   else if (game.stage === 5 && defeatedCount("wetland") >= 6) advanceStage(6, "湿原も片づいた。めんどくせーけど黒土前線へ！");
   else if (game.stage === 6) checkFrontComplete();
+}
+
+const campaignThemes = {
+  dawn: { sky: 0xa9bea1, fog: 0x93aa8f, hemi: 0xd9eadc, ground: 0x443521, sun: 0xffdf9b, density: 0.013 },
+  coast: { sky: 0x91b8bd, fog: 0x789fa6, hemi: 0xd8f4ef, ground: 0x33484b, sun: 0xffedc1, density: 0.012 },
+  moon: { sky: 0x252b46, fog: 0x343851, hemi: 0x7887bc, ground: 0x201d2d, sun: 0xb9c9ff, density: 0.017 },
+  cavern: { sky: 0x241d19, fog: 0x332822, hemi: 0x8e7864, ground: 0x160f0c, sun: 0xf0a55e, density: 0.021 },
+  sky: { sky: 0xa8cad8, fog: 0xb6ced4, hemi: 0xe8fbff, ground: 0x51564d, sun: 0xfff0b8, density: 0.009 },
+  final: { sky: 0x2c1719, fog: 0x451f20, hemi: 0xa45d5b, ground: 0x170b0b, sun: 0xff765c, density: 0.019 },
+};
+
+const campaignSpawns = {
+  forest: [[-16, 13], [16, 10], [-11, 2], [12, -3], [-18, -12], [18, -15], [0, -22]],
+  marsh: [[-18, -7], [18, -10], [-12, -18], [12, -22], [-20, -29], [20, -31], [0, -38]],
+  front: [[-24, -31], [24, -34], [-16, -41], [16, -44], [-26, -48], [26, -48], [0, -50]],
+  fortress: [[-19, -47], [19, -47], [-13, -58], [13, -58], [-22, -68], [22, -68], [0, -70]],
+};
+
+const campaignStarts = {
+  forest: [0, 27], marsh: [0, 8], front: [0, -20], fortress: [0, -39],
+};
+
+function applyCampaignTheme(themeName) {
+  const theme = campaignThemes[themeName] || campaignThemes.dawn;
+  scene.background.setHex(theme.sky);
+  scene.fog.color.setHex(theme.fog);
+  scene.fog.density = theme.density;
+  hemi.color.setHex(theme.hemi);
+  hemi.groundColor.setHex(theme.ground);
+  sun.color.setHex(theme.sun);
+  renderer.toneMappingExposure = themeName === "final" ? 0.92 : 1.05;
+}
+
+function hideCampaignEncounter() {
+  campaignPool.forEach((enemy) => {
+    enemy.dead = true;
+    enemy.model.visible = false;
+    enemy.campaignStage = -1;
+  });
+  if (campaignBoss) {
+    campaignBoss.dead = true;
+    campaignBoss.model.visible = false;
+    campaignBoss.campaignStage = -1;
+  }
+  game.target = null;
+  game.bossActive = false;
+}
+
+function configureCampaignEnemy(enemy, chapter, slot) {
+  const points = campaignSpawns[chapter.arena] || campaignSpawns.forest;
+  const [x, z] = points[slot % points.length];
+  const scale = 0.72 + (slot % 4) * 0.1 + chapter.actIndex * 0.035;
+  const elite = chapter.elite || 1;
+  const hp = Math.round((250 + chapter.stage * 42) * elite);
+  enemy.name = chapter.enemies[(game.campaignKills + slot) % chapter.enemies.length];
+  enemy.maxHp = hp;
+  enemy.hp = hp;
+  enemy.damage = Math.round((12 + chapter.stage * 0.72) * Math.min(elite, 1.3));
+  enemy.dead = false;
+  enemy.campaignStage = game.stage;
+  enemy.attackCd = 0.7 + Math.random();
+  enemy.model.scale.setScalar(scale);
+  enemy.model.userData.baseScale = scale;
+  enemy.model.position.set(x + (Math.random() - 0.5) * 2.5, heightAt(x, z), z + (Math.random() - 0.5) * 2.5);
+  enemy.origin.copy(enemy.model.position);
+  enemy.model.visible = true;
+}
+
+function respawnCampaignEnemy(enemy, stage) {
+  setTimeout(() => {
+    const chapter = campaignChapterForStage(game.stage);
+    if (!chapter || chapter.kind !== "battle" || stage !== game.stage || game.transitioning || game.chapterProgress >= chapter.target) return;
+    configureCampaignEnemy(enemy, chapter, campaignPool.indexOf(enemy));
+  }, 1350);
+}
+
+function prepareCampaignChapter({ teleport = false, announce = false } = {}) {
+  hideCampaignEncounter();
+  const nagatoro = enemies.find((enemy) => enemy.id === "boss");
+  if (nagatoro) {
+    nagatoro.dead = true;
+    nagatoro.model.visible = false;
+  }
+  if (game.stage === CAMPAIGN_EPILOGUE_STAGE) {
+    applyCampaignTheme("dawn");
+    if (teleport) player.position.set(0, heightAt(0, 30), 30);
+    return;
+  }
+  const chapter = campaignChapterForStage(game.stage);
+  if (!chapter) return;
+  applyCampaignTheme(chapter.theme);
+  if (teleport) {
+    const [x, z] = chapter.kind === "talk" ? [1, 28] : (campaignStarts[chapter.arena] || campaignStarts.forest);
+    player.position.set(x, heightAt(x, z), z);
+    player.rotation.y = 0;
+  }
+  if (chapter.kind === "battle") {
+    campaignPool.forEach((enemy, slot) => configureCampaignEnemy(enemy, chapter, slot));
+  } else if (chapter.kind === "boss" && campaignBoss) {
+    const point = (campaignSpawns[chapter.arena] || campaignSpawns.fortress).at(-1);
+    campaignBoss.name = chapter.boss.name;
+    campaignBoss.maxHp = chapter.boss.hp;
+    campaignBoss.hp = chapter.boss.hp;
+    campaignBoss.damage = chapter.boss.damage;
+    campaignBoss.dead = false;
+    campaignBoss.campaignStage = game.stage;
+    campaignBoss.model.scale.setScalar(chapter.boss.scale);
+    campaignBoss.model.userData.baseScale = chapter.boss.scale;
+    campaignBoss.model.position.set(point[0], heightAt(point[0], point[1]), point[1]);
+    campaignBoss.origin.copy(campaignBoss.model.position);
+    campaignBoss.model.visible = true;
+    game.bossActive = true;
+  }
+  if (announce && chapter.kind !== "talk" && !game.seenCampaignStages.includes(game.stage)) {
+    game.seenCampaignStages.push(game.stage);
+    setTimeout(() => {
+      if (game.started && game.stage === chapter.stage && !game.dialog) showDialog(campaignDialog(chapter));
+    }, 550);
+  }
+}
+
+function showCampaignMilestone(final = false) {
+  $("ending-kicker").textContent = final ? "THE 30-HOUR CHRONICLE COMPLETE" : "FIRST CAMPAIGN COMPLETE";
+  $("ending-title").textContent = final ? "めんどくせーけど、いい帝国。" : "第一部完。帝国、建国。";
+  $("ending-text").innerHTML = final
+    ? "六つの戦場とすべての仲間が、長芋族との歴史に決着をつけた。<br>カピノブの帝国は、ここからも続いていく。"
+    : "大長老ナガトロは倒れた。だが建国した瞬間から、<br>残党、海道、内乱、地底、そして空から新たな面倒が押し寄せる。";
+  $("ending-close").textContent = final ? "帝国を歩き続ける" : "第二部・建国の火種へ";
+  game.ending = true;
+  game.paused = true;
+  $("ending").classList.remove("hidden");
+  playSound("victory");
+}
+
+function completeCampaignChapter() {
+  const chapter = campaignChapterForStage(game.stage);
+  if (!chapter || game.transitioning) return;
+  game.transitioning = true;
+  hideCampaignEncounter();
+  const reward = 90 + chapter.actIndex * 45;
+  gainXp(reward);
+  game.hp = game.maxHp;
+  game.spirit = 100;
+  saveGame();
+  setTimeout(() => {
+    if (chapter.final) {
+      game.campaignComplete = true;
+      advanceStage(CAMPAIGN_EPILOGUE_STAGE, "長い戦い、今度こそ本当に終了！ 温泉行くぞ！");
+      showCampaignMilestone(true);
+      return;
+    }
+    advanceStage(game.stage + 1, `${chapter.title}、完了。次もめんどくせーけど行くぞ！`);
+  }, 850);
+}
+
+function defeatCampaignEnemy(enemy) {
+  enemy.dead = true;
+  enemy.model.visible = false;
+  game.target = null;
+  game.kills++;
+  game.campaignKills++;
+  game.chapterProgress++;
+  const chapter = campaignChapterForStage(game.stage);
+  gainXp(52 + chapter.actIndex * 12);
+  updateQuestUI();
+  saveGame();
+  if (game.chapterProgress >= chapter.target) completeCampaignChapter();
+  else if (!enemy.boss) respawnCampaignEnemy(enemy, game.stage);
 }
 
 function beginAmbush() {
@@ -526,6 +728,16 @@ function interact() {
   }
 
   const npc = closest.item;
+  const campaignChapter = campaignChapterForStage(game.stage);
+  if (npc.id === "advisor" && campaignChapter?.kind === "talk") {
+    if (!game.seenCampaignStages.includes(game.stage)) game.seenCampaignStages.push(game.stage);
+    showDialog(campaignDialog(campaignChapter), () => {
+      game.chapterProgress = 1;
+      updateQuestUI();
+      completeCampaignChapter();
+    });
+    return;
+  }
   if (npc.id === "advisor" && game.stage === 2) {
     showDialog([
       { role: npc.role, name: npc.name, text: "お、起きた？ お前、森で長芋にボコボコにされてたぞ。生まれた初日にあれは逆に才能ある。" },
@@ -561,8 +773,8 @@ function recruit(npc) {
 }
 
 function updateParty() {
-  const members = [game.stage >= 8 ? "王" : "旅", ...allies.map((n) => n.name[0])];
-  $("party-title").textContent = game.stage >= 8 ? "カピバラ帝国軍" : game.stage >= 4 ? "討伐隊" : "旅の仲間";
+  const members = [game.stage >= CAMPAIGN_START_STAGE ? "帝" : "旅", ...allies.map((n) => n.name[0])];
+  $("party-title").textContent = game.stage >= CAMPAIGN_START_STAGE ? "カピバラ帝国遠征軍" : game.stage >= 4 ? "討伐隊" : "旅の仲間";
   $("party-count").textContent = `${members.length} / 4`;
   $("party-list").innerHTML = [0, 1, 2, 3].map((i) => `<span class="${i < members.length ? "active" : ""}">${members[i] || "—"}</span>`).join("");
 }
@@ -643,6 +855,7 @@ function useSkill() {
 
 function enemyIsActive(enemy) {
   if (enemy.region === "ambush") return false;
+  if (enemy.campaign) return enemy.campaignStage === game.stage && game.stage >= CAMPAIGN_START_STAGE;
   if (enemy.boss) return game.stage >= 7;
   if (enemy.region === "revenge") return game.stage >= 3;
   return game.stage >= 2;
@@ -674,6 +887,10 @@ function damageEnemy(enemy, amount, skill, combo = 0) {
 }
 
 function defeatEnemy(enemy) {
+  if (enemy.campaign) {
+    defeatCampaignEnemy(enemy);
+    return;
+  }
   enemy.dead = true;
   enemy.model.visible = false;
   if (!game.defeated.includes(enemy.id)) game.defeated.push(enemy.id);
@@ -682,7 +899,7 @@ function defeatEnemy(enemy) {
     game.target = null;
     gainXp(350);
     advanceStage(8, "大長老ナガトロを撃破！");
-    setTimeout(() => { game.ending = true; game.paused = true; $("ending").classList.remove("hidden"); playSound("victory"); }, 900);
+    setTimeout(() => showCampaignMilestone(false), 900);
   } else {
     game.kills++;
     gainXp(42);
@@ -897,7 +1114,7 @@ function updateEnemies(dt, time) {
     const dist = horizontalDistance(player.position, enemy.model.position);
     if (active && dist < closest && dist < (enemy.boss ? 22 : 12)) { closest = dist; game.target = enemy; }
 
-    if (enemy.boss && active && dist < 18 && !game.bossIntro) {
+    if (enemy.boss && !enemy.campaign && active && dist < 18 && !game.bossIntro) {
       game.bossIntro = true; game.bossActive = true;
       showDialog([
         { kind: "yam", role: "話が長そうなラスボス", name: "大長老 ナガトロ", text: "ネバァァ……よくぞ来た丸い毛玉よ。我こそは長芋族四千年の歴史を背負いし——" },
@@ -974,8 +1191,9 @@ function updateHud() {
   $("spirit-bar").style.width = `${game.spirit}%`;
   $("spirit-text").textContent = `${Math.floor(game.spirit)}%`;
   $("player-level").textContent = `LV. ${game.level}`;
-  $("player-role").textContent = game.stage < 3 ? "森に生まれた者" : game.stage < 7 ? "長芋を追う旅人" : game.stage < 8 ? "カピバラ隊長" : "建国王";
-  $("player-name").textContent = game.stage < 2 ? "カピノブ" : "カピバラ・カピノブ";
+  const role = game.stage < 3 ? "森に生まれた者" : game.stage < 7 ? "長芋を追う旅人" : game.stage < 8 ? "カピバラ隊長" : game.stage < 20 ? "めんどくさがり建国王" : game.stage < 32 ? "六道遠征王" : "カピバラ皇帝";
+  $("player-role").textContent = role;
+  $("player-name").textContent = game.stage < 2 ? "カピノブ" : game.stage >= CAMPAIGN_START_STAGE ? "建国王・カピノブ" : "カピバラ・カピノブ";
   $("xp-bar").style.width = `${game.xp / (game.level * 115) * 100}%`;
   $("skill-btn").classList.toggle("cooldown", game.skillCooldown > 0 || game.spirit < 50);
   const target = game.target;
@@ -984,9 +1202,25 @@ function updateHud() {
     $("target-name").textContent = target.name;
     $("target-hp").style.width = `${target.hp / target.maxHp * 100}%`;
   }
-  const boss = enemies.find((e) => e.boss);
-  $("boss-bar").classList.toggle("hidden", !game.bossActive || boss.dead);
-  if (boss) $("boss-hp").style.width = `${boss.hp / boss.maxHp * 100}%`;
+  const boss = enemies.find((enemy) => enemy.boss && !enemy.dead && enemy.model.visible && enemyIsActive(enemy));
+  $("boss-bar").classList.toggle("hidden", !game.bossActive || !boss);
+  if (boss) {
+    $("boss-kind").textContent = boss.campaign ? "長芋族・遠征大将" : "長芋族・大族長";
+    $("boss-name").textContent = boss.name;
+    $("boss-hp").style.width = `${boss.hp / boss.maxHp * 100}%`;
+  }
+  const hours = Math.floor(game.playTime / 3600);
+  const minutes = Math.floor(game.playTime % 3600 / 60);
+  $("play-time").textContent = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const campaignChapter = campaignChapterForStage(game.stage);
+  if (campaignChapter) {
+    $("zone-name").textContent = campaignChapter.zone;
+    return;
+  }
+  if (game.stage === CAMPAIGN_EPILOGUE_STAGE) {
+    $("zone-name").textContent = epilogueQuest.zone;
+    return;
+  }
   const z = player.position.z;
   $("zone-name").textContent = z > 48 ? "はじまりの森" : z > 18 ? "森のはずれ・旅人野営地" : z > -7 ? "木漏れ日の谷" : z > -34 ? "黄金湿原" : z > -53 ? "黒土の前線" : "長芋族・黒土砦";
 }
@@ -1056,6 +1290,9 @@ function saveGame() {
     hp: game.hp, maxHp: game.maxHp, spirit: game.spirit, xp: game.xp, level: game.level, playTime: game.playTime,
     position: { x: player.position.x, z: player.position.z }, bossIntro: game.bossIntro,
     birthShown: game.birthShown, ambushTriggered: game.ambushTriggered,
+    chapterProgress: game.chapterProgress, campaignKills: game.campaignKills,
+    seenCampaignStages: game.seenCampaignStages, campaignComplete: game.campaignComplete,
+    campaignBossHp: campaignBoss?.campaignStage === game.stage ? campaignBoss.hp : null,
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
 }
@@ -1063,12 +1300,18 @@ function saveGame() {
 function applySave(data) {
   if (!data) return;
   Object.assign(game, {
-    stage: data.stage ?? 0, recruits: data.recruits || [], kills: data.kills || 0, defeated: data.defeated || [], posts: data.posts || [false, false],
+    stage: Math.min(data.stage ?? 0, CAMPAIGN_EPILOGUE_STAGE), recruits: data.recruits || [], kills: data.kills || 0, defeated: data.defeated || [], posts: data.posts || [false, false],
     hp: data.hp || 120, maxHp: data.maxHp || 120, spirit: data.spirit || 0, xp: data.xp || 0, level: data.level || 1, playTime: data.playTime || 0,
     bossIntro: !!data.bossIntro, bossActive: (data.stage === 7 && !!data.bossIntro),
     birthShown: !!data.birthShown, ambushTriggered: !!data.ambushTriggered,
+    chapterProgress: data.chapterProgress || 0, campaignKills: data.campaignKills || 0,
+    seenCampaignStages: data.seenCampaignStages || [], campaignComplete: !!data.campaignComplete,
+    resumeCampaignBossHp: Number.isFinite(data.campaignBossHp) ? data.campaignBossHp : null,
   });
   if (data.position) player.position.set(data.position.x, heightAt(data.position.x, data.position.z), data.position.z);
+  if (game.stage === CAMPAIGN_START_STAGE && data.chapterProgress === undefined) {
+    player.position.set(1, heightAt(1, 28), 28);
+  }
   npcs.forEach((npc) => {
     if (game.recruits.includes(npc.id)) { npc.recruited = true; npc.followIndex = allies.length; allies.push(npc); }
   });
@@ -1090,6 +1333,15 @@ function startGame(continueSave = false) {
   $("hud").classList.remove("hidden");
   updateQuestUI();
   updateParty();
+  if (game.stage >= CAMPAIGN_START_STAGE) {
+    prepareCampaignChapter({ teleport: false, announce: true });
+    if (campaignBoss?.campaignStage === game.stage && Number.isFinite(game.resumeCampaignBossHp)) {
+      campaignBoss.hp = THREE.MathUtils.clamp(game.resumeCampaignBossHp, 1, campaignBoss.maxHp);
+    }
+    game.resumeCampaignBossHp = null;
+  }
+  const resumedChapter = campaignChapterForStage(game.stage);
+  if (resumedChapter && game.chapterProgress >= resumedChapter.target) setTimeout(completeCampaignChapter, 350);
   playSound("quest");
   toast(continueSave ? "はい再開。休憩終わりー" : "カピバラ爆誕。なぜかグラサン装備済み");
   if (!continueSave || (game.stage === 0 && !game.birthShown)) {
@@ -1110,7 +1362,7 @@ function toggleMenu(force) {
 }
 
 function renderJournal() {
-  const chapters = ["森に生まれた日", "逃れられない襲撃", "敗北の朝", "ひとりでは勝てない", "木漏れ日の修行", "黄金湿原の戦い", "黒土前線", "長芋戦役", "帝国の夜明け"];
+  const chapters = questData.map((quest) => quest[1]);
   $("chapter-list").innerHTML = chapters.map((name, i) => `<div class="chapter-item ${i > game.stage ? "locked" : ""}"><span>${String(i + 1).padStart(2, "0")}</span><b>${name}</b><small>${i < game.stage ? "完了" : i === game.stage ? "進行中" : "未解放"}</small></div>`).join("");
 }
 
